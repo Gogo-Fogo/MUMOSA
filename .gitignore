@@ -1,0 +1,49 @@
+# OS / editor noise
+.DS_Store
+Thumbs.db
+Desktop.ini
+.vscode/
+.idea/
+*.swp
+*.tmp
+*.bak
+
+# Unreal generated folders
+Binaries/
+DerivedDataCache/
+Intermediate/
+Saved/
+.vs/
+
+# Unreal generated project files
+*.sln
+*.suo
+*.opensdf
+*.sdf
+*.VC.db
+*.VC.opendb
+
+# Unreal build/package output
+Builds/
+PackagedBuilds/
+Releases/
+StagedBuilds/
+
+# Logs and crash reports
+*.log
+CrashReportClient/
+
+# Python/cache tooling
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Local-only secrets/config
+.env
+.env.*
+*.local
+
+# Keep media folders, but ignore placeholder noise only.
+07_Prototype_Media/**/.DS_Store
+07_Prototype_Media/**/Thumbs.db
+
