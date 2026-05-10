@@ -1,30 +1,109 @@
 #include "UI/MumosaEvidenceWidget.h"
 #include "Integration/MumosaAIAnalyzer.h"
+#include "Components/TextBlock.h"
+#include "Components/EditableTextBox.h"
+#include "Components/Button.h"
+#include "Engine/Engine.h"
 
 void UMumosaEvidenceWidget::NativeConstruct()
 {
 	Super::NativeConstruct();
-	if (UMumosaAIAnalyzer* Analyzer = GetGameInstance()->GetSubsystem<UMumosaAIAnalyzer>())
+	SetWidgetReferences();
+
+	if (CloseBtn)
 	{
-		Analyzer->OnAnalysisComplete.AddDynamic(this, &UMumosaEvidenceWidget::HandleAnalysisResult);
+		CloseBtn->OnClicked.AddDynamic(this, &UMumosaEvidenceWidget::OnCloseButtonClicked);
+	}
+	if (SubmitBtn)
+	{
+		SubmitBtn->OnClicked.AddDynamic(this, &UMumosaEvidenceWidget::OnSubmitButtonClicked);
+	}
+	if (InputTextBox)
+	{
+		InputTextBox->OnTextCommitted.AddDynamic(this, &UMumosaEvidenceWidget::OnTextCommitted);
 	}
 }
 
 void UMumosaEvidenceWidget::NativeDestruct()
 {
-	if (UMumosaAIAnalyzer* Analyzer = GetGameInstance()->GetSubsystem<UMumosaAIAnalyzer>())
+	if (CloseBtn)
 	{
-		Analyzer->OnAnalysisComplete.RemoveDynamic(this, &UMumosaEvidenceWidget::HandleAnalysisResult);
+		CloseBtn->OnClicked.RemoveDynamic(this, &UMumosaEvidenceWidget::OnCloseButtonClicked);
+	}
+	if (SubmitBtn)
+	{
+		SubmitBtn->OnClicked.RemoveDynamic(this, &UMumosaEvidenceWidget::OnSubmitButtonClicked);
+	}
+	if (InputTextBox)
+	{
+		InputTextBox->OnTextCommitted.RemoveDynamic(this, &UMumosaEvidenceWidget::OnTextCommitted);
 	}
 	Super::NativeDestruct();
 }
 
-void UMumosaEvidenceWidget::RequestAnalysisFor(const FString& ObjectLabel, const FString& Question)
+void UMumosaEvidenceWidget::SetWidgetReferences()
 {
-	OnAnalysisStarted(ObjectLabel);
-	if (UMumosaAIAnalyzer* Analyzer = GetGameInstance()->GetSubsystem<UMumosaAIAnalyzer>())
+	TitleTextWidget = Cast<UTextBlock>(GetWidgetFromName(TEXT("TitleText")));
+	ResponseBodyTextWidget = Cast<UTextBlock>(GetWidgetFromName(TEXT("ResponseBodyText")));
+	InputTextBox = Cast<UEditableTextBox>(GetWidgetFromName(TEXT("QuestionInput")));
+	SubmitBtn = Cast<UButton>(GetWidgetFromName(TEXT("SubmitButton")));
+	CloseBtn = Cast<UButton>(GetWidgetFromName(TEXT("CloseButton")));
+}
+
+void UMumosaEvidenceWidget::SetDisplayedObject(const FString& ObjectLabel)
+{
+	CurrentObjectLabel = ObjectLabel;
+	bPendingAnalysis = true;
+	if (TitleTextWidget) TitleTextWidget->SetText(FText::FromString(ObjectLabel));
+	if (ResponseBodyTextWidget) ResponseBodyTextWidget->SetText(FText::FromString(TEXT("Analyzing...")));
+	if (InputTextBox)
 	{
-		Analyzer->RequestAnalysis(ObjectLabel, Question);
+		InputTextBox->SetText(FText::GetEmpty());
+		InputTextBox->SetHintText(FText::FromString(TEXT("Ask a question about this object...")));
+	}
+}
+
+FString UMumosaEvidenceWidget::GetQuestionText() const
+{
+	if (InputTextBox) return InputTextBox->GetText().ToString();
+	return FString();
+}
+
+void UMumosaEvidenceWidget::OnAnalysisStarted(const FString& ObjectLabel)
+{
+	if (ResponseBodyTextWidget) ResponseBodyTextWidget->SetText(FText::FromString(TEXT("Analyzing...")));
+}
+
+void UMumosaEvidenceWidget::OnAnalysisResult(const FString& ResponseText, EMumosaConfidenceLevel Confidence, const FString& ObjectLabel)
+{
+	FString ConfidenceStr;
+	switch (Confidence)
+	{
+		case EMumosaConfidenceLevel::High: ConfidenceStr = TEXT("(High confidence)"); break;
+		case EMumosaConfidenceLevel::Medium: ConfidenceStr = TEXT("(Medium confidence)"); break;
+		case EMumosaConfidenceLevel::Low: ConfidenceStr = TEXT("(Low confidence)"); break;
+		default: ConfidenceStr = TEXT("(Pending)"); break;
+	}
+
+	FString Display = FString::Printf(TEXT("%s\n%s"), *ResponseText, *ConfidenceStr);
+	if (ResponseBodyTextWidget) ResponseBodyTextWidget->SetText(FText::FromString(Display));
+}
+
+void UMumosaEvidenceWidget::OnCloseButtonClicked()
+{
+	OnCloseClicked.Broadcast();
+}
+
+void UMumosaEvidenceWidget::OnSubmitButtonClicked()
+{
+	OnSubmitClicked.Broadcast();
+}
+
+void UMumosaEvidenceWidget::OnTextCommitted(const FText& Text, ETextCommit::Type CommitMethod)
+{
+	if (CommitMethod == ETextCommit::OnEnter)
+	{
+		OnSubmitClicked.Broadcast();
 	}
 }
 

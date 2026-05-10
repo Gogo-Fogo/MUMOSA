@@ -11,8 +11,8 @@ UCLASS()
 class DERELICTCORRIDORMEGASCANS_API AMumosaEvidenceMarkerActor : public AActor
 {
 	GENERATED_BODY()
-
-public:
+	
+public:	
 	AMumosaEvidenceMarkerActor();
 
 	UPROPERTY(BlueprintAssignable, Category = "MUMOSA|Evidence")
@@ -32,6 +32,10 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "MUMOSA|Evidence")
 	bool IsSelected() const { return bSelected; }
+
+	/** VR interaction method - called when VR controller interacts with marker */
+	UFUNCTION(BlueprintCallable, Category = "MUMOSA|Evidence|VR")
+	void InteractViaVR();
 
 protected:
 	virtual void BeginPlay() override;

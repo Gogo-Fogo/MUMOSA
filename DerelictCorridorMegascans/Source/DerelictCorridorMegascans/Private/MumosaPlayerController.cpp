@@ -1,46 +1,244 @@
 #include "MumosaPlayerController.h"
 #include "Integration/MumosaAIAnalyzer.h"
+#include "UI/MumosaEvidenceWidget.h"
 #include "Engine/GameInstance.h"
+#include "Engine/World.h"
 #include "Kismet/GameplayStatics.h"
 #include "Engine/Engine.h"
 #include "Blueprint/UserWidget.h"
+#include "Components/WidgetComponent.h"
 #include "UObject/Class.h"
+#include "UObject/ConstructorHelpers.h"
+#include "UObject/UObjectGlobals.h"
+#include "Components/PrimitiveComponent.h"
 
 AMumosaPlayerController::AMumosaPlayerController()
 {
 	bShowMouseCursor = true;
 	bEnableClickEvents = true;
+	bEnableMouseOverEvents = false;
+
+	PrimaryActorTick.bCanEverTick = true;
+	PrimaryActorTick.bStartWithTickEnabled = true;
+
+	static ConstructorHelpers::FClassFinder<UMumosaEvidenceWidget> WidgetBP(TEXT("/Game/UI/WBP_EvidenceOverlay.WBP_EvidenceOverlay_C"));
+	if (WidgetBP.Succeeded())
+	{
+		EvidenceWidgetClass = WidgetBP.Class;
+	}
+
+	static ConstructorHelpers::FClassFinder<AActor> PopupBP(TEXT("/Game/Blueprints/BP_PopupActor.BP_PopupActor_C"));
+	if (PopupBP.Succeeded())
+	{
+		PopupActorClass = PopupBP.Class;
+	}
+
+	static ConstructorHelpers::FClassFinder<AActor> SkyBP(TEXT("/Game/Blueprints/BP_FloatingSkyChatBox.BP_FloatingSkyChatBox_C"));
+	if (SkyBP.Succeeded())
+	{
+		SkyChatboxClass = SkyBP.Class;
+	}
 }
 
 void AMumosaPlayerController::BeginPlay()
 {
 	Super::BeginPlay();
 
-	if (EvidenceWidgetClass)
-	{
-		EvidenceWidget = CreateWidget<UMumosaEvidenceWidget>(this, EvidenceWidgetClass);
-		if (EvidenceWidget)
-		{
-			EvidenceWidget->AddToViewport();
-		}
-	}
-
 	BindToAnalyzer();
+	SpawnSkyChatbox();
 }
 
-void AMumosaPlayerController::SetupInputComponent()
+void AMumosaPlayerController::Tick(float DeltaTime)
 {
-	Super::SetupInputComponent();
-	if (InputComponent)
+	Super::Tick(DeltaTime);
+	TraceForHover();
+
+	// Face sky chatbox toward camera + floating bob
+	if (SkyChatboxActor && PlayerCameraManager)
 	{
-		InputComponent->BindAction("Interact", IE_Pressed, this, &AMumosaPlayerController::OnInteract);
+		FVector CamLoc = PlayerCameraManager->GetCameraLocation();
+		FRotator LookAt = (CamLoc - SkyChatboxActor->GetActorLocation()).Rotation();
+		LookAt.Pitch = 0.0f;
+		LookAt.Roll = 0.0f;
+		SkyChatboxActor->SetActorRotation(LookAt);
+
+		SkyChatboxTime += DeltaTime;
+		FVector Loc = SkyChatboxActor->GetActorLocation();
+		Loc.Z = SkyChatboxOrigin.Z + FMath::Sin(SkyChatboxTime * 0.5f) * 15.0f;
+		SkyChatboxActor->SetActorLocation(Loc);
+	}
+
+	if (WasInputKeyJustPressed(EKeys::LeftMouseButton))
+	{
+		OnInteract();
 	}
 }
 
 void AMumosaPlayerController::OnInteract()
 {
-	GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Yellow, TEXT("Interact pressed — analyzing..."));
-	PerformLineTraceAndAnalyze();
+	UE_LOG(LogTemp, Log, TEXT("MUMOSA OnInteract called"));
+
+	if (CurrentPopupActor)
+	{
+		OnPopupClose();
+		return;
+	}
+
+	FVector2D MousePos;
+	if (!GetMousePosition(MousePos.X, MousePos.Y)) return;
+
+	FHitResult Hit;
+	if (GetHitResultAtScreenPosition(MousePos, ECC_Visibility, true, Hit))
+	{
+		// Only interact with evidence markers
+		if (AMumosaEvidenceMarkerActor* Marker = Cast<AMumosaEvidenceMarkerActor>(Hit.GetActor()))
+		{
+			SelectedObjectLabel = Marker->GetMarkerId().ToString();
+			if (!SelectedObjectLabel.IsEmpty())
+			{
+				ShowPopup(SelectedObjectLabel, Hit.Location);
+			}
+		}
+	}
+}
+
+void AMumosaPlayerController::SpawnSkyChatbox()
+{
+	if (!SkyChatboxClass || !GetWorld()) return;
+
+	SkyChatboxOrigin = FVector(9500.0f, -2000.0f, 600.0f);
+	FActorSpawnParameters SpawnParams;
+	SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	SkyChatboxActor = GetWorld()->SpawnActor<AActor>(SkyChatboxClass, SkyChatboxOrigin, FRotator::ZeroRotator, SpawnParams);
+}
+
+void AMumosaPlayerController::TraceForHover()
+{
+	FVector2D MousePos;
+	if (!GetMousePosition(MousePos.X, MousePos.Y)) return;
+
+	FHitResult Hit;
+	if (GetHitResultAtScreenPosition(MousePos, ECC_Visibility, true, Hit))
+	{
+		AActor* HitActor = Hit.GetActor();
+		UPrimitiveComponent* HitComp = Hit.Component.Get();
+
+		// Only highlight evidence markers
+		if (HitActor && HitActor != HoveredActor.Get())
+		{
+			// Only interact with evidence markers
+			if (HitActor->IsA(AMumosaEvidenceMarkerActor::StaticClass()))
+			{
+				ClearHover();
+				HoveredActor = HitActor;
+				HoveredComponent = HitComp;
+				ApplyHighlight(HitComp);
+			}
+		}
+		else if (!HitActor && HoveredActor.IsValid())
+		{
+			ClearHover();
+		}
+	}
+	else if (HoveredActor.IsValid())
+	{
+		ClearHover();
+	}
+}
+
+void AMumosaPlayerController::ClearHover()
+{
+	if (HoveredComponent.IsValid())
+	{
+		RemoveHighlight(HoveredComponent.Get());
+	}
+	HoveredActor = nullptr;
+	HoveredComponent = nullptr;
+}
+
+void AMumosaPlayerController::ApplyHighlight(UPrimitiveComponent* Component)
+{
+	if (!Component) return;
+
+	Component->SetRenderCustomDepth(true);
+	Component->SetCustomDepthStencilValue(1);
+}
+
+void AMumosaPlayerController::RemoveHighlight(UPrimitiveComponent* Component)
+{
+	if (!Component) return;
+
+	Component->SetRenderCustomDepth(false);
+	Component->SetCustomDepthStencilValue(0);
+}
+
+void AMumosaPlayerController::ShowPopup(const FString& ObjectLabel, const FVector& WorldLocation)
+{
+	if (!PopupActorClass || !GetWorld()) return;
+
+	FActorSpawnParameters SpawnParams;
+	SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+
+	FVector PopupLocation = WorldLocation;
+	if (APlayerCameraManager* Cam = PlayerCameraManager)
+	{
+		FVector CamLoc = Cam->GetCameraLocation();
+		FVector Dir = (CamLoc - PopupLocation).GetSafeNormal();
+		PopupLocation += Dir * 120.0f;
+		PopupLocation.Z += 60.0f;
+	}
+
+	FRotator LookAtRotation = (PlayerCameraManager->GetCameraLocation() - PopupLocation).Rotation();
+
+	CurrentPopupActor = GetWorld()->SpawnActor<AActor>(PopupActorClass, PopupLocation, LookAtRotation, SpawnParams);
+	if (!CurrentPopupActor) return;
+
+	UWidgetComponent* WidgetComp = CurrentPopupActor->FindComponentByClass<UWidgetComponent>();
+	if (!WidgetComp) return;
+
+	WidgetComp->SetDrawAtDesiredSize(false);
+	WidgetComp->SetDrawSize(FIntPoint(500, 400));
+	WidgetComp->SetBlendMode(EWidgetBlendMode::Transparent);
+
+	UMumosaEvidenceWidget* PopupWidget = Cast<UMumosaEvidenceWidget>(WidgetComp->GetWidget());
+	if (!PopupWidget) return;
+
+	PopupWidget->SetDisplayedObject(ObjectLabel);
+	PopupWidget->OnCloseClicked.AddDynamic(this, &AMumosaPlayerController::OnPopupClose);
+	PopupWidget->OnSubmitClicked.AddDynamic(this, &AMumosaPlayerController::OnPopupSubmit);
+
+	if (UMumosaAIAnalyzer* Analyzer = GetGameInstance()->GetSubsystem<UMumosaAIAnalyzer>())
+	{
+		Analyzer->RequestAnalysis(ObjectLabel, TEXT("What is this object and what evidence does it provide?"));
+	}
+}
+
+void AMumosaPlayerController::OnPopupClose()
+{
+	if (CurrentPopupActor)
+	{
+		CurrentPopupActor->Destroy();
+		CurrentPopupActor = nullptr;
+	}
+}
+
+void AMumosaPlayerController::OnPopupSubmit()
+{
+	if (!CurrentPopupActor) return;
+
+	UWidgetComponent* WidgetComp = CurrentPopupActor->FindComponentByClass<UWidgetComponent>();
+	if (!WidgetComp) return;
+
+	UMumosaEvidenceWidget* PopupWidget = Cast<UMumosaEvidenceWidget>(WidgetComp->GetWidget());
+	if (!PopupWidget) return;
+
+	FString Question = PopupWidget->GetQuestionText();
+	if (Question.IsEmpty()) return;
+
+	if (UMumosaAIAnalyzer* Analyzer = GetGameInstance()->GetSubsystem<UMumosaAIAnalyzer>())
+	{
+		Analyzer->RequestAnalysis(SelectedObjectLabel, Question);
+	}
 }
 
 void AMumosaPlayerController::BindToAnalyzer()
@@ -54,38 +252,15 @@ void AMumosaPlayerController::BindToAnalyzer()
 void AMumosaPlayerController::HandleAnalysisResult(const FString& ResponseText, EMumosaConfidenceLevel Confidence, const FString& ObjectLabel)
 {
 	FString ConfidenceStr = StaticEnum<EMumosaConfidenceLevel>()->GetDisplayNameTextByValue((int64)Confidence).ToString();
-	FString Msg = FString::Printf(TEXT("[%s] %s — %s"), *ObjectLabel, *ConfidenceStr, *ResponseText);
-	GEngine->AddOnScreenDebugMessage(-1, 15.0f, FColor::Green, Msg);
-	UE_LOG(LogTemp, Log, TEXT("MUMOSA: %s"), *Msg);
+	UE_LOG(LogTemp, Log, TEXT("MUMOSA: [%s] %s — %s"), *ObjectLabel, *ConfidenceStr, *ResponseText);
 
-	if (EvidenceWidget)
-	{
-		EvidenceWidget->OnAnalysisResult(ResponseText, Confidence, ObjectLabel);
-	}
-}
+	if (!CurrentPopupActor) return;
 
-void AMumosaPlayerController::PerformLineTraceAndAnalyze()
-{
-	FVector CamLoc;
-	FRotator CamRot;
-	GetPlayerViewPoint(CamLoc, CamRot);
+	UWidgetComponent* WidgetComp = CurrentPopupActor->FindComponentByClass<UWidgetComponent>();
+	if (!WidgetComp) return;
 
-	FVector End = CamLoc + CamRot.Vector() * InteractRange;
-	FHitResult Hit;
-	FCollisionQueryParams Params;
-	Params.AddIgnoredActor(GetPawn());
+	UMumosaEvidenceWidget* PopupWidget = Cast<UMumosaEvidenceWidget>(WidgetComp->GetWidget());
+	if (!PopupWidget) return;
 
-	if (GetWorld()->LineTraceSingleByChannel(Hit, CamLoc, End, ECC_Visibility, Params))
-	{
-		AActor* HitActor = Hit.GetActor();
-		if (!HitActor) return;
-
-		FString Label = HitActor->GetActorLabel();
-		if (Label.IsEmpty()) Label = HitActor->GetName();
-
-		if (UMumosaAIAnalyzer* Analyzer = GetGameInstance()->GetSubsystem<UMumosaAIAnalyzer>())
-		{
-			Analyzer->RequestAnalysis(Label, TEXT("What is this object and what evidence does it provide?"));
-		}
-	}
+	PopupWidget->OnAnalysisResult(ResponseText, Confidence, ObjectLabel);
 }

@@ -1,6 +1,7 @@
 #include "Evidence/MumosaEvidenceMarkerActor.h"
 #include "Components/TextRenderComponent.h"
 #include "Components/SphereComponent.h"
+#include "Kismet/GameplayStatics.h"
 
 AMumosaEvidenceMarkerActor::AMumosaEvidenceMarkerActor()
 {
@@ -13,7 +14,7 @@ AMumosaEvidenceMarkerActor::AMumosaEvidenceMarkerActor()
 	MarkerMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("MarkerMesh"));
 	MarkerMesh->SetupAttachment(SceneRoot);
 	MarkerMesh->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
-	MarkerMesh->SetCollisionResponseToAllChannels(ECR_Block);
+	MarkerMesh->SetCollisionResponseToAllChannels(ECR_Ignore);
 
 	LabelText = CreateDefaultSubobject<UTextRenderComponent>(TEXT("LabelText"));
 	LabelText->SetupAttachment(SceneRoot);
@@ -65,4 +66,17 @@ void AMumosaEvidenceMarkerActor::NotifyActorOnClicked(FKey ButtonPressed)
 {
 	Super::NotifyActorOnClicked(ButtonPressed);
 	OnMarkerSelected.Broadcast(this);
+}
+
+void AMumosaEvidenceMarkerActor::InteractViaVR()
+{
+	// VR interaction - same as click interaction
+	OnMarkerSelected.Broadcast(this);
+	
+	// Optional: provide haptic feedback or visual indication
+	if (GetWorld())
+	{
+		// Play a sound or trigger a particle effect for feedback
+		// This would require adding audio/VFX components or calling gameplay statics
+	}
 }

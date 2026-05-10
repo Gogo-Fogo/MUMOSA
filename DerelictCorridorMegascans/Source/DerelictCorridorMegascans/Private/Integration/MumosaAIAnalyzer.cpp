@@ -150,8 +150,11 @@ void UMumosaAIAnalyzer::OnGroqResponse(FHttpRequestPtr Request, FHttpResponsePtr
 		return;
 	}
 
+	FString ResponseBody = Response->GetContentAsString();
+	UE_LOG(LogMumosaAI, Log, TEXT("Groq response body: %s"), *ResponseBody);
+
 	TSharedPtr<FJsonObject> Json;
-	TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(Response->GetContentAsString());
+	TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(ResponseBody);
 	if (!FJsonSerializer::Deserialize(Reader, Json) || !Json.IsValid())
 	{
 		UE_LOG(LogMumosaAI, Error, TEXT("Failed to parse Groq response"));
@@ -159,12 +162,22 @@ void UMumosaAIAnalyzer::OnGroqResponse(FHttpRequestPtr Request, FHttpResponsePtr
 		return;
 	}
 
-	TArray<TSharedPtr<FJsonValue>> Choices = Json->GetArrayField(TEXT("choices"));
-	if (Choices.Num() == 0)
+	if (Json->HasField(TEXT("error")))
 	{
+		FString ErrorMsg = Json->GetObjectField(TEXT("error"))->GetStringField(TEXT("message"));
+		UE_LOG(LogMumosaAI, Error, TEXT("Groq API error: %s"), *ErrorMsg);
+		OnAnalysisComplete.Broadcast(FString::Printf(TEXT("[Groq error: %s]"), *ErrorMsg), EMumosaConfidenceLevel::Pending, ObjectLabel);
+		return;
+	}
+
+	const TArray<TSharedPtr<FJsonValue>>* ChoicesPtr;
+	if (!Json->TryGetArrayField(TEXT("choices"), ChoicesPtr) || ChoicesPtr->Num() == 0)
+	{
+		UE_LOG(LogMumosaAI, Error, TEXT("Groq response has no choices field"));
 		OnAnalysisComplete.Broadcast(TEXT("[No response]"), EMumosaConfidenceLevel::Pending, ObjectLabel);
 		return;
 	}
+	TArray<TSharedPtr<FJsonValue>> Choices = *ChoicesPtr;
 
 	FString Content = Choices[0]->AsObject()->GetObjectField(TEXT("message"))->GetStringField(TEXT("content"));
 	EMumosaConfidenceLevel Confidence = ParseConfidence(Content);
