@@ -13,6 +13,8 @@
 #include "UObject/UObjectGlobals.h"
 #include "Components/PrimitiveComponent.h"
 #include "Components/PostProcessComponent.h"
+#include "UI/MumosaFloatingPanelWidget.h"
+#include "UI/MumosaFloatingPanelActor.h"
 
 AMumosaPlayerController::AMumosaPlayerController()
 {
@@ -89,12 +91,32 @@ void AMumosaPlayerController::Tick(float DeltaTime)
 		if (PendingAICaptureDelay <= 0.0f)
 		{
 			bPendingAICapture = false;
+			if (AMumosaFloatingPanelActor* Panel = Cast<AMumosaFloatingPanelActor>(CurrentPopupActor))
+			{
+				Panel->SetPopupVisible(false);
+			}
 			if (UMumosaAIAnalyzer* Analyzer = GetGameInstance()->GetSubsystem<UMumosaAIAnalyzer>())
 			{
 				UE_LOG(LogTemp, Log, TEXT("MUMOSA: triggering capture attempt %d/3"), AICaptureRetries + 1);
 				Analyzer->RequestAnalysis(PendingAICaptureLabel, PendingAICaptureQuestion);
 			}
 		}
+	}
+
+	// Popup floating animation + billboard
+	if (bPopupActive && CurrentPopupActor && PlayerCameraManager)
+	{
+		FVector CamLoc = PlayerCameraManager->GetCameraLocation();
+		PopupBobbingTime += DeltaTime;
+
+		FVector Loc = PopupBobbingOrigin;
+		Loc.Z += FMath::Sin(PopupBobbingTime * 1.5f) * 5.0f;
+
+		FRotator LookAt = (CamLoc - Loc).Rotation();
+		LookAt.Pitch = 0.0f;
+		LookAt.Roll = 0.0f;
+
+		CurrentPopupActor->SetActorLocationAndRotation(Loc, LookAt);
 	}
 
 	// Face sky chatbox toward camera + floating bob
@@ -221,40 +243,51 @@ void AMumosaPlayerController::RemoveHighlight(UPrimitiveComponent* Component)
 
 void AMumosaPlayerController::ShowPopup(const FString& ObjectLabel, const FVector& WorldLocation)
 {
-	if (!PopupActorClass || !GetWorld()) return;
+	if (!GetWorld()) return;
 
 	FActorSpawnParameters SpawnParams;
 	SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
 
-	FVector PopupLocation = WorldLocation;
-	if (APlayerCameraManager* Cam = PlayerCameraManager)
+	FVector PopupLocation;
+	FRotator PopupRotation = FRotator::ZeroRotator;
+	if (PlayerCameraManager)
 	{
-		FVector CamLoc = Cam->GetCameraLocation();
-		FVector Dir = (CamLoc - PopupLocation).GetSafeNormal();
-		PopupLocation += Dir * 150.0f;
-		PopupLocation.Z += 80.0f;
+		FVector CamLoc = PlayerCameraManager->GetCameraLocation();
+		FVector CamForward = PlayerCameraManager->GetActorForwardVector();
+		PopupLocation = CamLoc + CamForward * 200.0f;
+		PopupLocation.Z -= 30.0f;
+
+		FVector ToCamera = (CamLoc - PopupLocation);
+		ToCamera.Z = 0.f;
+		if (!ToCamera.IsNearlyZero())
+		{
+			PopupRotation = ToCamera.Rotation();
+		}
+	}
+	else
+	{
+		PopupLocation = WorldLocation + FVector(0, 0, 80);
 	}
 
-	CurrentPopupActor = GetWorld()->SpawnActor<AActor>(PopupActorClass, PopupLocation, FRotator::ZeroRotator, SpawnParams);
-	if (!CurrentPopupActor) return;
+	CurrentPopupActor = GetWorld()->SpawnActor<AMumosaFloatingPanelActor>(AMumosaFloatingPanelActor::StaticClass(), PopupLocation, PopupRotation, SpawnParams);
+	if (!CurrentPopupActor)
+	{
+		UE_LOG(LogTemp, Error, TEXT("MUMOSA: Failed to spawn FloatingPanelActor"));
+		return;
+	}
 
-	UWidgetComponent* WidgetComp = CurrentPopupActor->FindComponentByClass<UWidgetComponent>();
-	if (!WidgetComp) return;
+	AMumosaFloatingPanelActor* PanelActor = Cast<AMumosaFloatingPanelActor>(CurrentPopupActor);
+	if (PanelActor)
+	{
+		PanelActor->SetBodyText(TEXT("Analyzing..."));
+	}
 
-	WidgetComp->SetWidgetSpace(EWidgetSpace::Screen);
-	WidgetComp->SetDrawAtDesiredSize(false);
-	WidgetComp->SetDrawSize(FIntPoint(500, 350));
-	WidgetComp->SetBlendMode(EWidgetBlendMode::Transparent);
-	WidgetComp->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-	WidgetComp->SetCollisionResponseToAllChannels(ECR_Ignore);
-	WidgetComp->SetPivot(FVector2D(0.5f, 0.5f));
+	UE_LOG(LogTemp, Warning, TEXT("MUMOSA: FloatingPanelActor spawned at %s"), *PopupLocation.ToString());
 
-	UMumosaEvidenceWidget* PopupWidget = Cast<UMumosaEvidenceWidget>(WidgetComp->GetWidget());
-	if (!PopupWidget) return;
-
-	PopupWidget->SetDisplayedObject(ObjectLabel);
-	PopupWidget->OnCloseClicked.AddDynamic(this, &AMumosaPlayerController::OnPopupClose);
-	PopupWidget->OnSubmitClicked.AddDynamic(this, &AMumosaPlayerController::OnPopupSubmit);
+	// Store bobbing origin
+	PopupBobbingOrigin = PopupLocation;
+	PopupBobbingTime = 0.0f;
+	bPopupActive = true;
 
 	bPendingAICapture = true;
 	AICaptureRetries = 0;
@@ -264,12 +297,13 @@ void AMumosaPlayerController::ShowPopup(const FString& ObjectLabel, const FVecto
 }
 
 void AMumosaPlayerController::OnPopupClose()
-{
+	{
 	if (CurrentPopupActor)
 	{
-		CurrentPopupActor->Destroy();
-		CurrentPopupActor = nullptr;
+		AMumosaFloatingPanelActor* PanelActor = Cast<AMumosaFloatingPanelActor>(CurrentPopupActor);
+		if (PanelActor) PanelActor->SetBodyText(TEXT("Analysis failed: could not capture view"));
 	}
+	bPopupActive = false;
 }
 
 void AMumosaPlayerController::OnPopupSubmit()
@@ -332,11 +366,10 @@ void AMumosaPlayerController::HandleAnalysisResult(const FString& ResponseText, 
 
 	if (!CurrentPopupActor) return;
 
-	UWidgetComponent* WidgetComp = CurrentPopupActor->FindComponentByClass<UWidgetComponent>();
-	if (!WidgetComp) return;
-
-	UMumosaEvidenceWidget* PopupWidget = Cast<UMumosaEvidenceWidget>(WidgetComp->GetWidget());
-	if (!PopupWidget) return;
-
-	PopupWidget->OnAnalysisResult(ResponseText, Confidence, ObjectLabel);
+	AMumosaFloatingPanelActor* PanelActor = Cast<AMumosaFloatingPanelActor>(CurrentPopupActor);
+	if (PanelActor)
+	{
+		PanelActor->SetBodyText(ResponseText);
+		PanelActor->SetPopupVisible(true);
+	}
 }

@@ -16,7 +16,8 @@ public class DerelictCorridorMegascans : ModuleRules
 
 		PrivateDependencyModuleNames.AddRange(new string[] {
 			"UMG", "Slate", "SlateCore",
-			"ImageWrapper", "RHI", "RenderCore"
+			"ImageWrapper", "RHI", "RenderCore",
+			"LGUI"
 		});
 
 		// Uncomment if you are using Slate UI

@@ -79,6 +79,10 @@ protected:
 	float SkyChatboxTime = 0.0f;
 	FVector SkyChatboxOrigin;
 
+	float PopupBobbingTime = 0.0f;
+	FVector PopupBobbingOrigin;
+	bool bPopupActive = false;
+
 	void BindToAnalyzer();
 
 	bool bPendingAICapture = false;
