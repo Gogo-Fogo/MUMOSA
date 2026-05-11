@@ -42,6 +42,7 @@ __pycache__/
 .env
 .env.*
 *.local
+DerelictCorridorMegascans/Config/DefaultGame.ini
 
 # Keep media folders, but ignore placeholder noise only.
 07_Prototype_Media/**/.DS_Store
