@@ -178,7 +178,7 @@ void AVRPawn::AttemptInteraction(UMotionControllerComponent* MotionController)
 					PC->SelectedObjectLabel = Marker->GetMarkerId().ToString();
 					if (!PC->SelectedObjectLabel.IsEmpty())
 					{
-						PC->ShowPopup(PC->SelectedObjectLabel, HitResult.Location);
+						PC->ShowPopup(PC->SelectedObjectLabel, HitResult.Location, HitResult.Normal);
 					}
 					break;
 				}

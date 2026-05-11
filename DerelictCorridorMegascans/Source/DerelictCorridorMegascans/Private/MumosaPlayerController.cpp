@@ -145,8 +145,10 @@ void AMumosaPlayerController::OnInteract()
 
 	if (CurrentPopupActor)
 	{
-		OnPopupClose();
-		return;
+		CurrentPopupActor->Destroy();
+		CurrentPopupActor = nullptr;
+		bPendingAICapture = false;
+		bPopupActive = false;
 	}
 
 	FVector2D MousePos;
@@ -162,7 +164,7 @@ void AMumosaPlayerController::OnInteract()
 			UE_LOG(LogTemp, Warning, TEXT("MUMOSA Hit: %s [%s]"), *Label, *HitActor->GetClass()->GetName());
 
 			SelectedObjectLabel = Label;
-			ShowPopup(Label, Hit.Location);
+			ShowPopup(Label, Hit.Location, Hit.Normal);
 		}
 	}
 	else
@@ -240,24 +242,24 @@ void AMumosaPlayerController::RemoveHighlight(UPrimitiveComponent* Component)
 	}
 }
 
-void AMumosaPlayerController::ShowPopup(const FString& ObjectLabel, const FVector& WorldLocation)
+void AMumosaPlayerController::ShowPopup(const FString& ObjectLabel, const FVector& WorldLocation, const FVector& HitNormal)
 {
 	if (!GetWorld()) return;
 
 	FActorSpawnParameters SpawnParams;
 	SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
 
-	FVector PopupLocation = WorldLocation + FVector(0, 0, 120);
+	FVector Normal = HitNormal.IsNearlyZero() ? FVector::UpVector : HitNormal.GetSafeNormal();
+	FVector PopupLocation = WorldLocation + Normal * 60.0f + FVector(0, 0, 40);
 	FRotator PopupRotation = FRotator::ZeroRotator;
 
 	if (PlayerCameraManager)
 	{
 		FVector CamLoc = PlayerCameraManager->GetCameraLocation();
-		PopupLocation.Z = FMath::Max(PopupLocation.Z, CamLoc.Z - 50.0f);
+		PopupLocation.Z = FMath::Max(PopupLocation.Z, CamLoc.Z - 80.0f);
 		FRotator LookAt = (CamLoc - PopupLocation).Rotation();
 		LookAt.Pitch = 0.0f;
 		LookAt.Roll = 0.0f;
-		LookAt.Yaw += 180.0f;
 		PopupRotation = LookAt;
 	}
 
@@ -292,9 +294,10 @@ void AMumosaPlayerController::OnPopupClose()
 	{
 	if (CurrentPopupActor)
 	{
-		AMumosaFloatingPanelActor* PanelActor = Cast<AMumosaFloatingPanelActor>(CurrentPopupActor);
-		if (PanelActor) PanelActor->SetBodyText(TEXT("Analysis failed: could not capture view"));
+		CurrentPopupActor->Destroy();
+		CurrentPopupActor = nullptr;
 	}
+	bPendingAICapture = false;
 	bPopupActive = false;
 }
 

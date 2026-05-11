@@ -25,7 +25,7 @@ public:
 	UPROPERTY(EditDefaultsOnly, Category = "MUMOSA|UI")
 	UMaterialInterface* HighlightMaterial;
 
-	void ShowPopup(const FString& ObjectLabel, const FVector& WorldLocation);
+	void ShowPopup(const FString& ObjectLabel, const FVector& WorldLocation, const FVector& HitNormal);
 
 	UFUNCTION()
 	void OnPopupClose();

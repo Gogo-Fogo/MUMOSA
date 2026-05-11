@@ -85,11 +85,11 @@ void AMumosaFloatingPanelActor::Tick(float DeltaTime)
 	if (PC && PC->PlayerCameraManager)
 	{
 		FVector CamLoc = PC->PlayerCameraManager->GetCameraLocation();
-		FVector ToCam = (CamLoc - GetActorLocation());
-		ToCam.Z = 0.f;
-		if (!ToCam.IsNearlyZero())
+		FVector FromCam = (GetActorLocation() - CamLoc);
+		FromCam.Z = 0.f;
+		if (!FromCam.IsNearlyZero())
 		{
-			SetActorRotation(ToCam.Rotation());
+			SetActorRotation(FromCam.Rotation());
 		}
 	}
 }
