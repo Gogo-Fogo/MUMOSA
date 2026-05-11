@@ -23,6 +23,7 @@ protected:
 	UPROPERTY()
 	TSubclassOf<AActor> LGUIPopupClass;
 
+public:
 	UPROPERTY()
 	TObjectPtr<AActor> LGUIPanelActor;
 };

@@ -103,7 +103,7 @@ void AMumosaPlayerController::Tick(float DeltaTime)
 	}
 
 	// Popup floating animation + billboard
-	if (bPopupActive && CurrentPopupActor && PlayerCameraManager)
+	if (bPopupActive && CurrentPopupActor && IsValid(CurrentPopupActor) && PlayerCameraManager)
 	{
 		FVector CamLoc = PlayerCameraManager->GetCameraLocation();
 		PopupBobbingTime += DeltaTime;
@@ -143,12 +143,18 @@ void AMumosaPlayerController::OnInteract()
 {
 	UE_LOG(LogTemp, Log, TEXT("MUMOSA OnInteract called"));
 
+	bPendingAICapture = false;
+	bPopupActive = false;
+
 	if (CurrentPopupActor)
 	{
+		AMumosaFloatingPanelActor* OldPanel = Cast<AMumosaFloatingPanelActor>(CurrentPopupActor);
+		if (OldPanel && OldPanel->LGUIPanelActor)
+		{
+			OldPanel->LGUIPanelActor->Destroy();
+		}
 		CurrentPopupActor->Destroy();
 		CurrentPopupActor = nullptr;
-		bPendingAICapture = false;
-		bPopupActive = false;
 	}
 
 	FVector2D MousePos;
@@ -344,7 +350,7 @@ void AMumosaPlayerController::HandleAnalysisResult(const FString& ResponseText, 
 			return;
 		}
 		UE_LOG(LogTemp, Error, TEXT("MUMOSA: all %d captures blank. Giving up."), MaxAICaptureRetries);
-		if (CurrentPopupActor)
+		if (CurrentPopupActor && IsValid(CurrentPopupActor))
 		{
 			AMumosaFloatingPanelActor* PanelActor = Cast<AMumosaFloatingPanelActor>(CurrentPopupActor);
 			if (PanelActor)
@@ -359,7 +365,7 @@ void AMumosaPlayerController::HandleAnalysisResult(const FString& ResponseText, 
 
 	AICaptureRetries = 0;
 
-	if (!CurrentPopupActor) return;
+	if (!CurrentPopupActor || !IsValid(CurrentPopupActor)) return;
 
 	AMumosaFloatingPanelActor* PanelActor = Cast<AMumosaFloatingPanelActor>(CurrentPopupActor);
 	if (PanelActor)
