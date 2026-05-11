@@ -12,6 +12,7 @@
 #include "UObject/ConstructorHelpers.h"
 #include "UObject/UObjectGlobals.h"
 #include "Components/PrimitiveComponent.h"
+#include "Components/PostProcessComponent.h"
 
 AMumosaPlayerController::AMumosaPlayerController()
 {
@@ -39,11 +40,39 @@ AMumosaPlayerController::AMumosaPlayerController()
 	{
 		SkyChatboxClass = SkyBP.Class;
 	}
+
+	static ConstructorHelpers::FObjectFinder<UMaterialInterface> OutlineMat(TEXT("/Game/MUMOSA/Materials/MI_Outline_Orange.MI_Outline_Orange"));
+	if (OutlineMat.Succeeded())
+	{
+		OutlineMaterial = OutlineMat.Object;
+	}
 }
 
 void AMumosaPlayerController::BeginPlay()
 {
 	Super::BeginPlay();
+
+	if (!OutlineMaterial)
+	{
+		OutlineMaterial = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/MUMOSA/Materials/MI_Outline_Orange.MI_Outline_Orange"));
+	}
+
+	if (OutlineMaterial && GetWorld())
+	{
+		OutlinePPActor = GetWorld()->SpawnActor<AActor>(AActor::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator);
+		if (OutlinePPActor)
+		{
+			UPostProcessComponent* PPComp = NewObject<UPostProcessComponent>(OutlinePPActor, TEXT("OutlinePP"));
+			PPComp->bEnabled = false;
+			PPComp->bUnbound = true;
+			FWeightedBlendable Blendable;
+			Blendable.Weight = 1.0f;
+			Blendable.Object = OutlineMaterial;
+			PPComp->Settings.WeightedBlendables.Array.Add(Blendable);
+			OutlinePPActor->AddInstanceComponent(PPComp);
+			PPComp->RegisterComponent();
+		}
+	}
 
 	BindToAnalyzer();
 	SpawnSkyChatbox();
@@ -157,6 +186,11 @@ void AMumosaPlayerController::ApplyHighlight(UPrimitiveComponent* Component)
 	if (!Component) return;
 	Component->SetRenderCustomDepth(true);
 	Component->SetCustomDepthStencilValue(1);
+	if (OutlinePPActor)
+	{
+		UPostProcessComponent* PPComp = OutlinePPActor->FindComponentByClass<UPostProcessComponent>();
+		if (PPComp) PPComp->bEnabled = true;
+	}
 }
 
 void AMumosaPlayerController::RemoveHighlight(UPrimitiveComponent* Component)
@@ -164,6 +198,11 @@ void AMumosaPlayerController::RemoveHighlight(UPrimitiveComponent* Component)
 	if (!Component) return;
 	Component->SetRenderCustomDepth(false);
 	Component->SetCustomDepthStencilValue(0);
+	if (OutlinePPActor)
+	{
+		UPostProcessComponent* PPComp = OutlinePPActor->FindComponentByClass<UPostProcessComponent>();
+		if (PPComp) PPComp->bEnabled = false;
+	}
 }
 
 void AMumosaPlayerController::ShowPopup(const FString& ObjectLabel, const FVector& WorldLocation)

@@ -58,6 +58,12 @@ protected:
 	UPROPERTY()
 	TObjectPtr<UMumosaEvidenceWidget> EvidenceWidget;
 
+	UPROPERTY()
+	TObjectPtr<UMaterialInterface> OutlineMaterial;
+
+	UPROPERTY()
+	TObjectPtr<class AActor> OutlinePPActor;
+
 	UPROPERTY(EditDefaultsOnly, Category = "MUMOSA|UI")
 	TSubclassOf<AActor> SkyChatboxClass;
 
