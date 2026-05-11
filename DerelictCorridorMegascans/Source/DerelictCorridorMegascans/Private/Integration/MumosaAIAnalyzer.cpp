@@ -151,13 +151,21 @@ void UMumosaAIAnalyzer::OnGroqResponse(FHttpRequestPtr Request, FHttpResponsePtr
 	}
 
 	FString ResponseBody = Response->GetContentAsString();
-	UE_LOG(LogMumosaAI, Log, TEXT("Groq response body: %s"), *ResponseBody);
+	int32 Code = Response->GetResponseCode();
+	UE_LOG(LogMumosaAI, Log, TEXT("Groq HTTP %d, body (%d chars): %s"), Code, ResponseBody.Len(), *ResponseBody.Left(500));
+
+	if (Code != 200)
+	{
+		UE_LOG(LogMumosaAI, Error, TEXT("Groq HTTP error %d: %s"), Code, *ResponseBody.Left(500));
+		OnAnalysisComplete.Broadcast(FString::Printf(TEXT("[HTTP %d]"), Code), EMumosaConfidenceLevel::Pending, ObjectLabel);
+		return;
+	}
 
 	TSharedPtr<FJsonObject> Json;
 	TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(ResponseBody);
 	if (!FJsonSerializer::Deserialize(Reader, Json) || !Json.IsValid())
 	{
-		UE_LOG(LogMumosaAI, Error, TEXT("Failed to parse Groq response"));
+		UE_LOG(LogMumosaAI, Error, TEXT("Failed to parse Groq response: %s"), *ResponseBody.Left(500));
 		OnAnalysisComplete.Broadcast(TEXT("[Parse error]"), EMumosaConfidenceLevel::Pending, ObjectLabel);
 		return;
 	}

@@ -1,67 +1,74 @@
-// Fill out your copyright notice in the Description page of Project Settings.
-
 #pragma once
 
 #include "CoreMinimal.h"
 #include "GameFramework/Pawn.h"
 #include "VRPawn.generated.h"
 
+class UCameraComponent;
+class USceneComponent;
+class UMotionControllerComponent;
+class UDecalComponent;
+class ANavMeshBoundsVolume;
+class UMaterialInterface;
+
 UCLASS()
 class DERELICTCORRIDORMEGASCANS_API AVRPawn : public APawn
 {
 	GENERATED_BODY()
-	
-public:	
-	// Sets default values for this pawn's properties
+
+public:
 	AVRPawn();
 
 protected:
-	// Called when the game starts or when spawned
 	virtual void BeginPlay() override;
 
-public:	
-	// Called every frame
+public:
 	virtual void Tick(float DeltaTime) override;
-
-	// Called to bind functionality to input
 	virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
 
-	/** Camera for VR */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = Camera)
-	class UCameraComponent* VRCamera;
+	UCameraComponent* VRCamera;
 
-	/** Root component for VR */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = VR)
-	class USceneComponent* VRRoot;
-
-	/** Motion controller components */
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "VR|Controllers")
-	class UMotionControllerComponent* LeftMotionController;
+	USceneComponent* VRRoot;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "VR|Controllers")
-	class UMotionControllerComponent* RightMotionController;
+	UMotionControllerComponent* LeftMotionController;
 
-	/** VR Origin (camera root) */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "VR|Controllers")
+	UMotionControllerComponent* RightMotionController;
+
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = VR)
-	class USceneComponent* VROrigin;
+	USceneComponent* VROrigin;
 
-	/** Teleportation-related properties */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|Teleportation")
-	class UNavMeshBoundsVolume* NavMeshBoundsVolume;
+	ANavMeshBoundsVolume* NavMeshBoundsVolume;
 
-	/** Teleport blink material */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|Teleportation")
-	class UMaterialInterface* TeleportBlinkMaterial;
+	UMaterialInterface* TeleportBlinkMaterial;
 
-	/** Whether we can currently teleport */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "VR|Teleportation")
 	bool bCanTeleport;
 
-	/** Teleport destination */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "VR|Teleportation")
 	FVector TeleportDestination;
 
-	/** Current location marker for teleport */
 	UPROPERTY()
-	class UDecalComponent* TeleportMarker;
+	UDecalComponent* TeleportMarker;
+
+private:
+	void OnLeftGripPressed();
+	void OnLeftGripReleased();
+	void OnRightGripPressed();
+	void OnRightGripReleased();
+	void OnLeftTriggerPressed();
+	void OnLeftTriggerReleased();
+	void OnRightTriggerPressed();
+	void OnRightTriggerReleased();
+	void OnLeftThumbstickPressed();
+	void OnRightThumbstickPressed();
+
+	void AttemptInteraction(UMotionControllerComponent* MotionController);
+	void StartTeleportPreview();
+	void CompleteTeleport();
 };

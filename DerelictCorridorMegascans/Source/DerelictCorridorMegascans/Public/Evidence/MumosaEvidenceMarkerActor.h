@@ -37,6 +37,18 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "MUMOSA|Evidence|VR")
 	void InteractViaVR();
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MUMOSA|Evidence")
+	FName MarkerId;
+
+	UPROPERTY()
+	bool bSelected;
+
+	UPROPERTY(EditAnywhere, Category = "MUMOSA|Evidence")
+	UMaterialInterface* DefaultMaterial;
+
+	UPROPERTY(EditAnywhere, Category = "MUMOSA|Evidence")
+	UMaterialInterface* SelectedMaterial;
+
 protected:
 	virtual void BeginPlay() override;
 	virtual void NotifyActorOnClicked(FKey ButtonPressed) override;
@@ -55,16 +67,4 @@ protected:
 
 	UPROPERTY()
 	FMumosaEvidenceMarkerRecord MarkerRecord;
-
-	UPROPERTY()
-	FName MarkerId;
-
-	UPROPERTY()
-	bool bSelected;
-
-	UPROPERTY(EditDefaultsOnly, Category = "MUMOSA|Evidence")
-	UMaterialInterface* DefaultMaterial;
-
-	UPROPERTY(EditDefaultsOnly, Category = "MUMOSA|Evidence")
-	UMaterialInterface* SelectedMaterial;
 };

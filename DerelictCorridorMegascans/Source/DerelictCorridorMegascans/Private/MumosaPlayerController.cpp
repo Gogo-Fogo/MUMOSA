@@ -1,6 +1,7 @@
 #include "MumosaPlayerController.h"
 #include "Integration/MumosaAIAnalyzer.h"
 #include "UI/MumosaEvidenceWidget.h"
+#include "Evidence/MumosaEvidenceMarkerActor.h"
 #include "Engine/GameInstance.h"
 #include "Engine/World.h"
 #include "Kismet/GameplayStatics.h"
@@ -90,15 +91,19 @@ void AMumosaPlayerController::OnInteract()
 	FHitResult Hit;
 	if (GetHitResultAtScreenPosition(MousePos, ECC_Visibility, true, Hit))
 	{
-		// Only interact with evidence markers
-		if (AMumosaEvidenceMarkerActor* Marker = Cast<AMumosaEvidenceMarkerActor>(Hit.GetActor()))
+		AActor* HitActor = Hit.GetActor();
+		if (HitActor)
 		{
-			SelectedObjectLabel = Marker->GetMarkerId().ToString();
-			if (!SelectedObjectLabel.IsEmpty())
-			{
-				ShowPopup(SelectedObjectLabel, Hit.Location);
-			}
+			FString Label = HitActor->GetActorLabel();
+			UE_LOG(LogTemp, Warning, TEXT("MUMOSA Hit: %s [%s]"), *Label, *HitActor->GetClass()->GetName());
+
+			SelectedObjectLabel = Label;
+			ShowPopup(Label, Hit.Location);
 		}
+	}
+	else
+	{
+		UE_LOG(LogTemp, Warning, TEXT("MUMOSA No hit at mouse"));
 	}
 }
 
@@ -123,21 +128,12 @@ void AMumosaPlayerController::TraceForHover()
 		AActor* HitActor = Hit.GetActor();
 		UPrimitiveComponent* HitComp = Hit.Component.Get();
 
-		// Only highlight evidence markers
-		if (HitActor && HitActor != HoveredActor.Get())
-		{
-			// Only interact with evidence markers
-			if (HitActor->IsA(AMumosaEvidenceMarkerActor::StaticClass()))
-			{
-				ClearHover();
-				HoveredActor = HitActor;
-				HoveredComponent = HitComp;
-				ApplyHighlight(HitComp);
-			}
-		}
-		else if (!HitActor && HoveredActor.IsValid())
+		if (HitActor && HitComp && HitActor != HoveredActor.Get())
 		{
 			ClearHover();
+			HoveredActor = HitActor;
+			HoveredComponent = HitComp;
+			ApplyHighlight(HitComp);
 		}
 	}
 	else if (HoveredActor.IsValid())
@@ -159,7 +155,6 @@ void AMumosaPlayerController::ClearHover()
 void AMumosaPlayerController::ApplyHighlight(UPrimitiveComponent* Component)
 {
 	if (!Component) return;
-
 	Component->SetRenderCustomDepth(true);
 	Component->SetCustomDepthStencilValue(1);
 }
@@ -167,7 +162,6 @@ void AMumosaPlayerController::ApplyHighlight(UPrimitiveComponent* Component)
 void AMumosaPlayerController::RemoveHighlight(UPrimitiveComponent* Component)
 {
 	if (!Component) return;
-
 	Component->SetRenderCustomDepth(false);
 	Component->SetCustomDepthStencilValue(0);
 }

@@ -25,6 +25,16 @@ public:
 	UPROPERTY(EditDefaultsOnly, Category = "MUMOSA|UI")
 	UMaterialInterface* HighlightMaterial;
 
+	void ShowPopup(const FString& ObjectLabel, const FVector& WorldLocation);
+
+	UFUNCTION()
+	void OnPopupClose();
+
+	UPROPERTY()
+	TObjectPtr<AActor> CurrentPopupActor;
+
+	FString SelectedObjectLabel;
+
 protected:
 	virtual void BeginPlay() override;
 	virtual void Tick(float DeltaTime) override;
@@ -37,11 +47,6 @@ protected:
 	void ApplyHighlight(UPrimitiveComponent* Component);
 	void RemoveHighlight(UPrimitiveComponent* Component);
 
-	void ShowPopup(const FString& ObjectLabel, const FVector& WorldLocation);
-
-	UFUNCTION()
-	void OnPopupClose();
-
 	void SpawnSkyChatbox();
 
 	UFUNCTION()
@@ -52,9 +57,6 @@ protected:
 
 	UPROPERTY()
 	TObjectPtr<UMumosaEvidenceWidget> EvidenceWidget;
-
-	UPROPERTY()
-	TObjectPtr<AActor> CurrentPopupActor;
 
 	UPROPERTY(EditDefaultsOnly, Category = "MUMOSA|UI")
 	TSubclassOf<AActor> SkyChatboxClass;
@@ -67,8 +69,6 @@ protected:
 
 	UPROPERTY()
 	TWeakObjectPtr<UPrimitiveComponent> HoveredComponent;
-
-	FString SelectedObjectLabel;
 
 	float SkyChatboxTime = 0.0f;
 	FVector SkyChatboxOrigin;

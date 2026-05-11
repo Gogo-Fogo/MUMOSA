@@ -10,7 +10,8 @@ public class DerelictCorridorMegascans : ModuleRules
 	
 		PublicDependencyModuleNames.AddRange(new string[] {
 			"Core", "CoreUObject", "Engine", "InputCore",
-			"HTTP", "Json", "JsonUtilities"
+			"HTTP", "Json", "JsonUtilities",
+			"NavigationSystem", "HeadMountedDisplay"
 		});
 
 		PrivateDependencyModuleNames.AddRange(new string[] {
