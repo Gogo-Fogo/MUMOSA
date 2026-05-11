@@ -48,3 +48,5 @@ DerelictCorridorMegascans/Config/DefaultGame.ini
 07_Prototype_Media/**/.DS_Store
 07_Prototype_Media/**/Thumbs.db
 
+fix_placeholder.py
+UE5OutlineMaterial/
