@@ -13,7 +13,6 @@
 #include "UObject/UObjectGlobals.h"
 #include "Components/PrimitiveComponent.h"
 #include "Components/PostProcessComponent.h"
-#include "UI/MumosaFloatingPanelWidget.h"
 #include "UI/MumosaFloatingPanelActor.h"
 
 AMumosaPlayerController::AMumosaPlayerController()
@@ -248,25 +247,18 @@ void AMumosaPlayerController::ShowPopup(const FString& ObjectLabel, const FVecto
 	FActorSpawnParameters SpawnParams;
 	SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
 
-	FVector PopupLocation;
+	FVector PopupLocation = WorldLocation + FVector(0, 0, 120);
 	FRotator PopupRotation = FRotator::ZeroRotator;
+
 	if (PlayerCameraManager)
 	{
 		FVector CamLoc = PlayerCameraManager->GetCameraLocation();
-		FVector CamForward = PlayerCameraManager->GetActorForwardVector();
-		PopupLocation = CamLoc + CamForward * 200.0f;
-		PopupLocation.Z -= 30.0f;
-
-		FVector ToCamera = (CamLoc - PopupLocation);
-		ToCamera.Z = 0.f;
-		if (!ToCamera.IsNearlyZero())
-		{
-			PopupRotation = ToCamera.Rotation();
-		}
-	}
-	else
-	{
-		PopupLocation = WorldLocation + FVector(0, 0, 80);
+		PopupLocation.Z = FMath::Max(PopupLocation.Z, CamLoc.Z - 50.0f);
+		FRotator LookAt = (CamLoc - PopupLocation).Rotation();
+		LookAt.Pitch = 0.0f;
+		LookAt.Roll = 0.0f;
+		LookAt.Yaw += 180.0f;
+		PopupRotation = LookAt;
 	}
 
 	CurrentPopupActor = GetWorld()->SpawnActor<AMumosaFloatingPanelActor>(AMumosaFloatingPanelActor::StaticClass(), PopupLocation, PopupRotation, SpawnParams);
@@ -351,11 +343,11 @@ void AMumosaPlayerController::HandleAnalysisResult(const FString& ResponseText, 
 		UE_LOG(LogTemp, Error, TEXT("MUMOSA: all %d captures blank. Giving up."), MaxAICaptureRetries);
 		if (CurrentPopupActor)
 		{
-			UWidgetComponent* WidgetComp = CurrentPopupActor->FindComponentByClass<UWidgetComponent>();
-			if (WidgetComp)
+			AMumosaFloatingPanelActor* PanelActor = Cast<AMumosaFloatingPanelActor>(CurrentPopupActor);
+			if (PanelActor)
 			{
-				if (UMumosaEvidenceWidget* PopupWidget = Cast<UMumosaEvidenceWidget>(WidgetComp->GetWidget()))
-					PopupWidget->OnAnalysisResult(TEXT("Analysis failed: could not capture view"), Confidence, ObjectLabel);
+				PanelActor->SetBodyText(TEXT("Analysis failed: could not capture view"));
+				PanelActor->SetPopupVisible(true);
 			}
 		}
 		AICaptureRetries = 0;

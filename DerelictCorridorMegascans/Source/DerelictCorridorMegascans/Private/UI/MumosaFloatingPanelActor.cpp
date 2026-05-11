@@ -1,9 +1,8 @@
 #include "UI/MumosaFloatingPanelActor.h"
-#include "UI/MumosaFloatingPanelWidget.h"
-#include "Components/WidgetComponent.h"
 #include "Components/SceneComponent.h"
-#include "Components/TextRenderComponent.h"
 #include "Kismet/GameplayStatics.h"
+#include "UObject/ConstructorHelpers.h"
+#include "Core/ActorComponent/UIText.h"
 
 static FString WrapText(const FString& InText, int32 MaxCharsPerLine, int32 MaxLines)
 {
@@ -53,40 +52,11 @@ AMumosaFloatingPanelActor::AMumosaFloatingPanelActor()
 	USceneComponent* Root = CreateDefaultSubobject<USceneComponent>(TEXT("Root"));
 	SetRootComponent(Root);
 
-	WidgetComp = CreateDefaultSubobject<UWidgetComponent>(TEXT("MumosaPanelWidget"));
-	WidgetComp->SetupAttachment(Root);
-	WidgetComp->SetWidgetClass(UMumosaFloatingPanelWidget::StaticClass());
-	WidgetComp->SetWidgetSpace(EWidgetSpace::World);
-	WidgetComp->SetDrawSize(FIntPoint(350, 120));
-	WidgetComp->SetBlendMode(EWidgetBlendMode::Opaque);
-	WidgetComp->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-	WidgetComp->SetPivot(FVector2D(0.5f, 0.5f));
-	WidgetComp->SetTwoSided(true);
-	WidgetComp->SetVisibility(true);
-	WidgetComp->SetHiddenInGame(false);
-	WidgetComp->SetWorldScale3D(FVector(0.25f));
-
-	TextRender_Title = CreateDefaultSubobject<UTextRenderComponent>(TEXT("TitleText"));
-	TextRender_Title->SetupAttachment(Root);
-	TextRender_Title->SetText(FText::FromString(TEXT("MUMOSA")));
-	TextRender_Title->SetWorldSize(10.0f);
-	TextRender_Title->SetRelativeLocation(FVector(3.0f, 0.0f, 9.0f));
-	TextRender_Title->SetTextRenderColor(FColor(255, 200, 60));
-	TextRender_Title->SetHorizontalAlignment(EHorizTextAligment::EHTA_Center);
-	TextRender_Title->SetVerticalAlignment(EVerticalTextAligment::EVRTA_TextCenter);
-	TextRender_Title->SetHiddenInGame(false);
-	TextRender_Title->SetVisibility(true);
-
-	TextRender_Body = CreateDefaultSubobject<UTextRenderComponent>(TEXT("BodyText"));
-	TextRender_Body->SetupAttachment(Root);
-	TextRender_Body->SetText(FText::FromString(TEXT("Analyzing...")));
-	TextRender_Body->SetWorldSize(6.5f);
-	TextRender_Body->SetRelativeLocation(FVector(3.0f, 0.0f, -4.0f));
-	TextRender_Body->SetTextRenderColor(FColor(255, 255, 255));
-	TextRender_Body->SetHorizontalAlignment(EHorizTextAligment::EHTA_Center);
-	TextRender_Body->SetVerticalAlignment(EVerticalTextAligment::EVRTA_TextCenter);
-	TextRender_Body->SetHiddenInGame(false);
-	TextRender_Body->SetVisibility(true);
+	static ConstructorHelpers::FClassFinder<AActor> LGUIBP(TEXT("/Game/MUMOSA/UI/BP_MumosaLGUIFloatingPanel.BP_MumosaLGUIFloatingPanel_C"));
+	if (LGUIBP.Succeeded())
+	{
+		LGUIPopupClass = LGUIBP.Class;
+	}
 
 	PrimaryActorTick.bCanEverTick = true;
 }
@@ -95,9 +65,15 @@ void AMumosaFloatingPanelActor::BeginPlay()
 {
 	Super::BeginPlay();
 
-	if (WidgetComp)
+	if (LGUIPopupClass && GetWorld() && !LGUIPanelActor)
 	{
-		WidgetComp->InitWidget();
+		FActorSpawnParameters SpawnParams;
+		SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+		LGUIPanelActor = GetWorld()->SpawnActor<AActor>(LGUIPopupClass, FVector::ZeroVector, FRotator::ZeroRotator, SpawnParams);
+		if (LGUIPanelActor)
+		{
+			LGUIPanelActor->AttachToActor(this, FAttachmentTransformRules::KeepRelativeTransform);
+		}
 	}
 }
 
@@ -120,10 +96,35 @@ void AMumosaFloatingPanelActor::Tick(float DeltaTime)
 
 void AMumosaFloatingPanelActor::SetBodyText(const FString& Text)
 {
-	if (TextRender_Body)
+	if (!LGUIPanelActor) return;
+
+	FString Wrapped = WrapText(Text, 40, 6);
+
+	TArray<UUIText*> TextComps;
+	LGUIPanelActor->GetComponents<UUIText>(TextComps);
+	for (UUIText* Comp : TextComps)
 	{
-		FString Wrapped = WrapText(Text, 30, 3);
-		TextRender_Body->SetText(FText::FromString(Wrapped));
+		if (Comp->GetName().Contains(TEXT("BodyText")))
+		{
+			Comp->SetText(FText::FromString(Wrapped));
+			return;
+		}
+	}
+}
+
+void AMumosaFloatingPanelActor::SetTitleText(const FString& Text)
+{
+	if (!LGUIPanelActor) return;
+
+	TArray<UUIText*> TextComps;
+	LGUIPanelActor->GetComponents<UUIText>(TextComps);
+	for (UUIText* Comp : TextComps)
+	{
+		if (Comp->GetName().Contains(TEXT("TitleText")))
+		{
+			Comp->SetText(FText::FromString(Text));
+			return;
+		}
 	}
 }
 
@@ -131,4 +132,8 @@ void AMumosaFloatingPanelActor::SetPopupVisible(bool bVisible)
 {
 	SetActorHiddenInGame(!bVisible);
 	SetActorTickEnabled(bVisible);
+	if (LGUIPanelActor)
+	{
+		LGUIPanelActor->SetActorHiddenInGame(!bVisible);
+	}
 }
