@@ -80,4 +80,11 @@ protected:
 	FVector SkyChatboxOrigin;
 
 	void BindToAnalyzer();
+
+	bool bPendingAICapture = false;
+	FString PendingAICaptureLabel;
+	FString PendingAICaptureQuestion;
+	float PendingAICaptureDelay = 0.0f;
+	int32 AICaptureRetries = 0;
+	static constexpr int32 MaxAICaptureRetries = 3;
 };

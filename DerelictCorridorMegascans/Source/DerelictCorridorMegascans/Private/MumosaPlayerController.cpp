@@ -83,6 +83,20 @@ void AMumosaPlayerController::Tick(float DeltaTime)
 	Super::Tick(DeltaTime);
 	TraceForHover();
 
+	if (bPendingAICapture)
+	{
+		PendingAICaptureDelay -= DeltaTime;
+		if (PendingAICaptureDelay <= 0.0f)
+		{
+			bPendingAICapture = false;
+			if (UMumosaAIAnalyzer* Analyzer = GetGameInstance()->GetSubsystem<UMumosaAIAnalyzer>())
+			{
+				UE_LOG(LogTemp, Log, TEXT("MUMOSA: triggering capture attempt %d/3"), AICaptureRetries + 1);
+				Analyzer->RequestAnalysis(PendingAICaptureLabel, PendingAICaptureQuestion);
+			}
+		}
+	}
+
 	// Face sky chatbox toward camera + floating bob
 	if (SkyChatboxActor && PlayerCameraManager)
 	{
@@ -217,21 +231,23 @@ void AMumosaPlayerController::ShowPopup(const FString& ObjectLabel, const FVecto
 	{
 		FVector CamLoc = Cam->GetCameraLocation();
 		FVector Dir = (CamLoc - PopupLocation).GetSafeNormal();
-		PopupLocation += Dir * 120.0f;
-		PopupLocation.Z += 60.0f;
+		PopupLocation += Dir * 150.0f;
+		PopupLocation.Z += 80.0f;
 	}
 
-	FRotator LookAtRotation = (PlayerCameraManager->GetCameraLocation() - PopupLocation).Rotation();
-
-	CurrentPopupActor = GetWorld()->SpawnActor<AActor>(PopupActorClass, PopupLocation, LookAtRotation, SpawnParams);
+	CurrentPopupActor = GetWorld()->SpawnActor<AActor>(PopupActorClass, PopupLocation, FRotator::ZeroRotator, SpawnParams);
 	if (!CurrentPopupActor) return;
 
 	UWidgetComponent* WidgetComp = CurrentPopupActor->FindComponentByClass<UWidgetComponent>();
 	if (!WidgetComp) return;
 
+	WidgetComp->SetWidgetSpace(EWidgetSpace::Screen);
 	WidgetComp->SetDrawAtDesiredSize(false);
-	WidgetComp->SetDrawSize(FIntPoint(500, 400));
+	WidgetComp->SetDrawSize(FIntPoint(500, 350));
 	WidgetComp->SetBlendMode(EWidgetBlendMode::Transparent);
+	WidgetComp->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	WidgetComp->SetCollisionResponseToAllChannels(ECR_Ignore);
+	WidgetComp->SetPivot(FVector2D(0.5f, 0.5f));
 
 	UMumosaEvidenceWidget* PopupWidget = Cast<UMumosaEvidenceWidget>(WidgetComp->GetWidget());
 	if (!PopupWidget) return;
@@ -240,10 +256,11 @@ void AMumosaPlayerController::ShowPopup(const FString& ObjectLabel, const FVecto
 	PopupWidget->OnCloseClicked.AddDynamic(this, &AMumosaPlayerController::OnPopupClose);
 	PopupWidget->OnSubmitClicked.AddDynamic(this, &AMumosaPlayerController::OnPopupSubmit);
 
-	if (UMumosaAIAnalyzer* Analyzer = GetGameInstance()->GetSubsystem<UMumosaAIAnalyzer>())
-	{
-		Analyzer->RequestAnalysis(ObjectLabel, TEXT("What is this object and what evidence does it provide?"));
-	}
+	bPendingAICapture = true;
+	AICaptureRetries = 0;
+	PendingAICaptureLabel = ObjectLabel;
+	PendingAICaptureQuestion = TEXT("What is this object and what evidence does it provide?");
+	PendingAICaptureDelay = 0.2f;
 }
 
 void AMumosaPlayerController::OnPopupClose()
@@ -284,8 +301,34 @@ void AMumosaPlayerController::BindToAnalyzer()
 
 void AMumosaPlayerController::HandleAnalysisResult(const FString& ResponseText, EMumosaConfidenceLevel Confidence, const FString& ObjectLabel)
 {
-	FString ConfidenceStr = StaticEnum<EMumosaConfidenceLevel>()->GetDisplayNameTextByValue((int64)Confidence).ToString();
-	UE_LOG(LogTemp, Log, TEXT("MUMOSA: [%s] %s — %s"), *ObjectLabel, *ConfidenceStr, *ResponseText);
+	UE_LOG(LogTemp, Log, TEXT("MUMOSA: [%s] %s"), *ObjectLabel, *ResponseText);
+
+	// Handle retry signal from blank image detector
+	if (ResponseText == TEXT("RETRY"))
+	{
+		AICaptureRetries++;
+		if (AICaptureRetries < MaxAICaptureRetries)
+		{
+			bPendingAICapture = true;
+			PendingAICaptureDelay = 0.05f;
+			UE_LOG(LogTemp, Warning, TEXT("MUMOSA: blank capture — retry %d/%d"), AICaptureRetries + 1, MaxAICaptureRetries);
+			return;
+		}
+		UE_LOG(LogTemp, Error, TEXT("MUMOSA: all %d captures blank. Giving up."), MaxAICaptureRetries);
+		if (CurrentPopupActor)
+		{
+			UWidgetComponent* WidgetComp = CurrentPopupActor->FindComponentByClass<UWidgetComponent>();
+			if (WidgetComp)
+			{
+				if (UMumosaEvidenceWidget* PopupWidget = Cast<UMumosaEvidenceWidget>(WidgetComp->GetWidget()))
+					PopupWidget->OnAnalysisResult(TEXT("Analysis failed: could not capture view"), Confidence, ObjectLabel);
+			}
+		}
+		AICaptureRetries = 0;
+		return;
+	}
+
+	AICaptureRetries = 0;
 
 	if (!CurrentPopupActor) return;
 

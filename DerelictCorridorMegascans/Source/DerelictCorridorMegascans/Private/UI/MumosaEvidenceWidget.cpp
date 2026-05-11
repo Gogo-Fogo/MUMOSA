@@ -48,6 +48,8 @@ void UMumosaEvidenceWidget::SetWidgetReferences()
 	InputTextBox = Cast<UEditableTextBox>(GetWidgetFromName(TEXT("QuestionInput")));
 	SubmitBtn = Cast<UButton>(GetWidgetFromName(TEXT("SubmitButton")));
 	CloseBtn = Cast<UButton>(GetWidgetFromName(TEXT("CloseButton")));
+	LoadingThrobberWidget = GetWidgetFromName(TEXT("LoadingThrobber"));
+	LoadingTextWidget = Cast<UTextBlock>(GetWidgetFromName(TEXT("LoadingText")));
 }
 
 void UMumosaEvidenceWidget::SetDisplayedObject(const FString& ObjectLabel)
@@ -56,6 +58,8 @@ void UMumosaEvidenceWidget::SetDisplayedObject(const FString& ObjectLabel)
 	bPendingAnalysis = true;
 	if (TitleTextWidget) TitleTextWidget->SetText(FText::FromString(ObjectLabel));
 	if (ResponseBodyTextWidget) ResponseBodyTextWidget->SetText(FText::FromString(TEXT("Analyzing...")));
+	if (LoadingThrobberWidget) LoadingThrobberWidget->SetVisibility(ESlateVisibility::Visible);
+	if (LoadingTextWidget) LoadingTextWidget->SetVisibility(ESlateVisibility::Visible);
 	if (InputTextBox)
 	{
 		InputTextBox->SetText(FText::GetEmpty());
@@ -76,17 +80,9 @@ void UMumosaEvidenceWidget::OnAnalysisStarted(const FString& ObjectLabel)
 
 void UMumosaEvidenceWidget::OnAnalysisResult(const FString& ResponseText, EMumosaConfidenceLevel Confidence, const FString& ObjectLabel)
 {
-	FString ConfidenceStr;
-	switch (Confidence)
-	{
-		case EMumosaConfidenceLevel::High: ConfidenceStr = TEXT("(High confidence)"); break;
-		case EMumosaConfidenceLevel::Medium: ConfidenceStr = TEXT("(Medium confidence)"); break;
-		case EMumosaConfidenceLevel::Low: ConfidenceStr = TEXT("(Low confidence)"); break;
-		default: ConfidenceStr = TEXT("(Pending)"); break;
-	}
-
-	FString Display = FString::Printf(TEXT("%s\n%s"), *ResponseText, *ConfidenceStr);
-	if (ResponseBodyTextWidget) ResponseBodyTextWidget->SetText(FText::FromString(Display));
+	if (ResponseBodyTextWidget) ResponseBodyTextWidget->SetText(FText::FromString(ResponseText));
+	if (LoadingThrobberWidget) LoadingThrobberWidget->SetVisibility(ESlateVisibility::Collapsed);
+	if (LoadingTextWidget) LoadingTextWidget->SetVisibility(ESlateVisibility::Collapsed);
 }
 
 void UMumosaEvidenceWidget::OnCloseButtonClicked()

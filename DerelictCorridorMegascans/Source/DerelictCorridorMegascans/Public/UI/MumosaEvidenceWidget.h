@@ -69,6 +69,12 @@ private:
 	UPROPERTY()
 	TObjectPtr<UButton> CloseBtn;
 
+	UPROPERTY()
+	TObjectPtr<UWidget> LoadingThrobberWidget;
+
+	UPROPERTY()
+	TObjectPtr<UTextBlock> LoadingTextWidget;
+
 	bool bPendingAnalysis = false;
 	FString CurrentObjectLabel;
 };
