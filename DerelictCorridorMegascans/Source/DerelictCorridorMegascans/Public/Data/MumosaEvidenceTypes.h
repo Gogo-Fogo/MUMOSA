@@ -66,10 +66,10 @@ struct FMumosaEvidenceMarkerRecord
 	FString AIInterpretation;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MUMOSA|Evidence")
-	EMumosaConfidenceLevel Confidence;
+	EMumosaConfidenceLevel Confidence = EMumosaConfidenceLevel::Pending;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MUMOSA|Evidence")
-	EMumosaEvidenceStatus Status;
+	EMumosaEvidenceStatus Status = EMumosaEvidenceStatus::Pending;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MUMOSA|Evidence")
 	FString TimelineEvent;

@@ -3,6 +3,7 @@
 #include "UI/MumosaEvidenceWidget.h"
 #include "Evidence/MumosaEvidenceMarkerActor.h"
 #include "Engine/GameInstance.h"
+#include "Engine/GameViewportClient.h"
 #include "Engine/World.h"
 #include "Kismet/GameplayStatics.h"
 #include "Engine/Engine.h"
@@ -14,6 +15,34 @@
 #include "Components/PrimitiveComponent.h"
 #include "Components/PostProcessComponent.h"
 #include "UI/MumosaFloatingPanelActor.h"
+#include "Widgets/SOverlay.h"
+#include "Widgets/Layout/SBorder.h"
+#include "Widgets/Layout/SBox.h"
+#include "Widgets/Text/STextBlock.h"
+#include "Styling/SlateBrush.h"
+#include "Styling/SlateTypes.h"
+
+static FString SanitizeAnalysisPopupText(const FString& InText)
+{
+	FString Clean;
+	Clean.Reserve(InText.Len());
+
+	for (const TCHAR Char : InText)
+	{
+		const bool bAllowedControl = Char == TEXT('\n') || Char == TEXT('\r') || Char == TEXT('\t');
+		if (bAllowedControl || (Char >= 32 && Char != 0xffff))
+		{
+			Clean.AppendChar(Char);
+		}
+	}
+
+	return Clean;
+}
+
+bool AMumosaPlayerController::ShouldUseViewportAnalysisPopup() const
+{
+	return !bUseWorldAnalysisPopup || bUseViewportPopupFallback;
+}
 
 AMumosaPlayerController::AMumosaPlayerController()
 {
@@ -90,32 +119,16 @@ void AMumosaPlayerController::Tick(float DeltaTime)
 		if (PendingAICaptureDelay <= 0.0f)
 		{
 			bPendingAICapture = false;
-			if (AMumosaFloatingPanelActor* Panel = Cast<AMumosaFloatingPanelActor>(CurrentPopupActor))
-			{
-				Panel->SetPopupVisible(false);
-			}
 			if (UMumosaAIAnalyzer* Analyzer = GetGameInstance()->GetSubsystem<UMumosaAIAnalyzer>())
 			{
 				UE_LOG(LogTemp, Log, TEXT("MUMOSA: triggering capture attempt %d/3"), AICaptureRetries + 1);
 				Analyzer->RequestAnalysis(PendingAICaptureLabel, PendingAICaptureQuestion);
+				if (ShouldUseViewportAnalysisPopup())
+				{
+					ShowAnalysisPopupText(TEXT("Analyzing..."));
+				}
 			}
 		}
-	}
-
-	// Popup floating animation + billboard
-	if (bPopupActive && CurrentPopupActor && IsValid(CurrentPopupActor) && PlayerCameraManager)
-	{
-		FVector CamLoc = PlayerCameraManager->GetCameraLocation();
-		PopupBobbingTime += DeltaTime;
-
-		FVector Loc = PopupBobbingOrigin;
-		Loc.Z += FMath::Sin(PopupBobbingTime * 1.5f) * 5.0f;
-
-		FRotator LookAt = (CamLoc - Loc).Rotation();
-		LookAt.Pitch = 0.0f;
-		LookAt.Roll = 0.0f;
-
-		CurrentPopupActor->SetActorLocationAndRotation(Loc, LookAt);
 	}
 
 	// Face sky chatbox toward camera + floating bob
@@ -145,14 +158,10 @@ void AMumosaPlayerController::OnInteract()
 
 	bPendingAICapture = false;
 	bPopupActive = false;
+	HideAnalysisPopup();
 
 	if (CurrentPopupActor)
 	{
-		AMumosaFloatingPanelActor* OldPanel = Cast<AMumosaFloatingPanelActor>(CurrentPopupActor);
-		if (OldPanel && OldPanel->LGUIPanelActor)
-		{
-			OldPanel->LGUIPanelActor->Destroy();
-		}
 		CurrentPopupActor->Destroy();
 		CurrentPopupActor = nullptr;
 	}
@@ -252,48 +261,185 @@ void AMumosaPlayerController::ShowPopup(const FString& ObjectLabel, const FVecto
 {
 	if (!GetWorld()) return;
 
-	FActorSpawnParameters SpawnParams;
-	SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-
-	FVector Normal = HitNormal.IsNearlyZero() ? FVector::UpVector : HitNormal.GetSafeNormal();
-	FVector PopupLocation = WorldLocation + Normal * 60.0f + FVector(0, 0, 40);
-	FRotator PopupRotation = FRotator::ZeroRotator;
-
-	if (PlayerCameraManager)
+	if (bUseWorldAnalysisPopup)
 	{
-		FVector CamLoc = PlayerCameraManager->GetCameraLocation();
-		PopupLocation.Z = FMath::Max(PopupLocation.Z, CamLoc.Z - 80.0f);
-		FRotator LookAt = (CamLoc - PopupLocation).Rotation();
-		LookAt.Pitch = 0.0f;
-		LookAt.Roll = 0.0f;
-		PopupRotation = LookAt;
+		SpawnWorldAnalysisPopup(WorldLocation, HitNormal);
 	}
 
-	CurrentPopupActor = GetWorld()->SpawnActor<AMumosaFloatingPanelActor>(AMumosaFloatingPanelActor::StaticClass(), PopupLocation, PopupRotation, SpawnParams);
-	if (!CurrentPopupActor)
+	if (ShouldUseViewportAnalysisPopup())
 	{
-		UE_LOG(LogTemp, Error, TEXT("MUMOSA: Failed to spawn FloatingPanelActor"));
-		return;
+		ShowAnalysisPopupText(TEXT("Analyzing..."));
+		UE_LOG(LogTemp, Warning, TEXT("MUMOSA: Viewport analysis popup shown for %s"), *ObjectLabel);
 	}
-
-	AMumosaFloatingPanelActor* PanelActor = Cast<AMumosaFloatingPanelActor>(CurrentPopupActor);
-	if (PanelActor)
-	{
-		PanelActor->SetBodyText(TEXT("Analyzing..."));
-	}
-
-	UE_LOG(LogTemp, Warning, TEXT("MUMOSA: FloatingPanelActor spawned at %s"), *PopupLocation.ToString());
-
-	// Store bobbing origin
-	PopupBobbingOrigin = PopupLocation;
-	PopupBobbingTime = 0.0f;
-	bPopupActive = true;
 
 	bPendingAICapture = true;
 	AICaptureRetries = 0;
 	PendingAICaptureLabel = ObjectLabel;
 	PendingAICaptureQuestion = TEXT("What is this object and what evidence does it provide?");
 	PendingAICaptureDelay = 0.2f;
+}
+
+void AMumosaPlayerController::SpawnWorldAnalysisPopup(const FVector& WorldLocation, const FVector& HitNormal)
+{
+	if (!GetWorld()) return;
+
+	const FVector SurfaceNormal = HitNormal.IsNearlyZero() ? FVector::UpVector : HitNormal.GetSafeNormal();
+	FVector AnchoredLocation = WorldLocation + SurfaceNormal * 28.0f + FVector(0.0f, 0.0f, 32.0f);
+	FVector PopupLocation = AnchoredLocation;
+	FRotator PopupRotation = FRotator::ZeroRotator;
+	bool bUsingCameraFallback = false;
+
+	if (PlayerCameraManager)
+	{
+		const FVector CamLoc = PlayerCameraManager->GetCameraLocation();
+		const FVector CamForward = PlayerCameraManager->GetCameraRotation().Vector();
+		const FVector CameraFallbackLocation = CamLoc + CamForward * 220.0f + FVector(0.0f, 0.0f, -15.0f);
+		const float CameraDistance = FVector::Distance(CamLoc, AnchoredLocation);
+
+		FVector2D ScreenPosition = FVector2D::ZeroVector;
+		const bool bProjected = ProjectWorldLocationToScreen(AnchoredLocation, ScreenPosition, true);
+		int32 ViewX = 0;
+		int32 ViewY = 0;
+		GetViewportSize(ViewX, ViewY);
+		const bool bViewportValid = ViewX > 0 && ViewY > 0;
+		const bool bOnScreen =
+			bProjected &&
+			bViewportValid &&
+			ScreenPosition.X >= 80.0f &&
+			ScreenPosition.Y >= 80.0f &&
+			ScreenPosition.X <= static_cast<float>(ViewX) - 80.0f &&
+			ScreenPosition.Y <= static_cast<float>(ViewY) - 80.0f;
+
+		bUsingCameraFallback = !bOnScreen || CameraDistance < 120.0f || CameraDistance > 360.0f;
+		PopupLocation = bUsingCameraFallback ? CameraFallbackLocation : AnchoredLocation;
+		PopupRotation = (CamLoc - PopupLocation).Rotation();
+		PopupRotation.Pitch = 0.0f;
+		PopupRotation.Roll = 0.0f;
+	}
+
+	FActorSpawnParameters SpawnParams;
+	SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	CurrentPopupActor = GetWorld()->SpawnActor<AMumosaFloatingPanelActor>(AMumosaFloatingPanelActor::StaticClass(), PopupLocation, PopupRotation, SpawnParams);
+	if (!CurrentPopupActor)
+	{
+		UE_LOG(LogTemp, Error, TEXT("MUMOSA: Failed to spawn world analysis popup actor"));
+		return;
+	}
+
+	CurrentPopupActor->Tags.AddUnique(TEXT("MUMOSA_WorldPopup"));
+#if WITH_EDITOR
+	CurrentPopupActor->SetActorLabel(TEXT("MUMOSA_WorldPopup"));
+#endif
+
+	if (AMumosaFloatingPanelActor* PanelActor = Cast<AMumosaFloatingPanelActor>(CurrentPopupActor))
+	{
+		PanelActor->SetAnchorData(WorldLocation, SurfaceNormal);
+		PanelActor->SetActorLocation(PopupLocation);
+		PanelActor->SetActorRotation(PopupRotation);
+		PanelActor->SetTitleText(TEXT("MUMOSA\nAnalyzing..."));
+		PanelActor->SetBodyText(TEXT("Analyzing..."));
+		PanelActor->SetPopupVisible(true);
+	}
+
+	PopupBobbingOrigin = PopupLocation;
+	PopupBobbingTime = 0.0f;
+	bPopupActive = false;
+	UE_LOG(LogTemp, Warning, TEXT("MUMOSA: World analysis popup actor staged at %s (%s, mode=%s)"), *PopupLocation.ToString(), *GetNameSafe(CurrentPopupActor), bUsingCameraFallback ? TEXT("camera_fallback") : TEXT("anchored"));
+}
+
+void AMumosaPlayerController::ShowWorldAnalysisPopupText(const FString& Text)
+{
+	if (!CurrentPopupActor || !IsValid(CurrentPopupActor))
+	{
+		return;
+	}
+
+	if (AMumosaFloatingPanelActor* PanelActor = Cast<AMumosaFloatingPanelActor>(CurrentPopupActor))
+	{
+		PanelActor->SetTitleText(TEXT("MUMOSA\nAnalysis"));
+		PanelActor->SetBodyText(Text);
+		PanelActor->SetPopupVisible(true);
+		bPopupActive = true;
+		UE_LOG(LogTemp, Warning, TEXT("MUMOSA: World analysis popup shown"));
+	}
+}
+
+void AMumosaPlayerController::ShowAnalysisPopupText(const FString& Text)
+{
+	if (!ShouldUseViewportAnalysisPopup())
+	{
+		return;
+	}
+
+	if (!GEngine || !GEngine->GameViewport)
+	{
+		return;
+	}
+
+	static const FSlateRoundedBoxBrush PopupBackgroundBrush(FLinearColor(0.045f, 0.045f, 0.065f, 0.96f), 22.0f);
+
+	if (!AnalysisPopupSlate.IsValid())
+	{
+		AnalysisPopupSlate =
+			SNew(SOverlay)
+			+ SOverlay::Slot()
+			.HAlign(HAlign_Center)
+			.VAlign(VAlign_Top)
+			.Padding(FMargin(0.0f, 145.0f, 0.0f, 0.0f))
+			[
+				SNew(SBox)
+				.WidthOverride(520.0f)
+				[
+					SNew(SBorder)
+					.BorderImage(&PopupBackgroundBrush)
+					.Padding(FMargin(36.0f, 24.0f))
+					[
+						SNew(SVerticalBox)
+						+ SVerticalBox::Slot()
+						.AutoHeight()
+						.HAlign(HAlign_Center)
+						.Padding(FMargin(0.0f, 0.0f, 0.0f, 18.0f))
+						[
+							SNew(STextBlock)
+							.Text(FText::FromString(TEXT("MUMOSA\nAnalyzing...")))
+							.ColorAndOpacity(FSlateColor(FLinearColor(1.0f, 0.72f, 0.02f, 1.0f)))
+							.Justification(ETextJustify::Center)
+							.Font(FSlateFontInfo(FCoreStyle::GetDefaultFont(), 22))
+						]
+						+ SVerticalBox::Slot()
+						.AutoHeight()
+						.HAlign(HAlign_Center)
+						[
+							SAssignNew(AnalysisPopupBodyText, STextBlock)
+							.Text(FText::FromString(TEXT("Analyzing...")))
+							.ColorAndOpacity(FSlateColor(FLinearColor::White))
+							.Justification(ETextJustify::Center)
+							.WrapTextAt(440.0f)
+							.Font(FSlateFontInfo(FCoreStyle::GetDefaultFont(), 16))
+						]
+					]
+				]
+			];
+
+		GEngine->GameViewport->AddViewportWidgetContent(AnalysisPopupSlate.ToSharedRef(), 1000);
+		UE_LOG(LogTemp, Warning, TEXT("MUMOSA: Raw Slate analysis popup added to GameViewport"));
+	}
+
+	if (AnalysisPopupBodyText.IsValid())
+	{
+		AnalysisPopupBodyText->SetText(FText::FromString(SanitizeAnalysisPopupText(Text)));
+	}
+}
+
+void AMumosaPlayerController::HideAnalysisPopup()
+{
+	if (GEngine && GEngine->GameViewport && AnalysisPopupSlate.IsValid())
+	{
+		GEngine->GameViewport->RemoveViewportWidgetContent(AnalysisPopupSlate.ToSharedRef());
+	}
+
+	AnalysisPopupBodyText.Reset();
+	AnalysisPopupSlate.Reset();
 }
 
 void AMumosaPlayerController::OnPopupClose()
@@ -303,6 +449,7 @@ void AMumosaPlayerController::OnPopupClose()
 		CurrentPopupActor->Destroy();
 		CurrentPopupActor = nullptr;
 	}
+	HideAnalysisPopup();
 	bPendingAICapture = false;
 	bPopupActive = false;
 }
@@ -350,27 +497,19 @@ void AMumosaPlayerController::HandleAnalysisResult(const FString& ResponseText, 
 			return;
 		}
 		UE_LOG(LogTemp, Error, TEXT("MUMOSA: all %d captures blank. Giving up."), MaxAICaptureRetries);
-		if (CurrentPopupActor && IsValid(CurrentPopupActor))
+		ShowWorldAnalysisPopupText(TEXT("Analysis failed: could not capture view"));
+		if (ShouldUseViewportAnalysisPopup())
 		{
-			AMumosaFloatingPanelActor* PanelActor = Cast<AMumosaFloatingPanelActor>(CurrentPopupActor);
-			if (PanelActor)
-			{
-				PanelActor->SetBodyText(TEXT("Analysis failed: could not capture view"));
-				PanelActor->SetPopupVisible(true);
-			}
+			ShowAnalysisPopupText(TEXT("Analysis failed: could not capture view"));
 		}
 		AICaptureRetries = 0;
 		return;
 	}
 
 	AICaptureRetries = 0;
-
-	if (!CurrentPopupActor || !IsValid(CurrentPopupActor)) return;
-
-	AMumosaFloatingPanelActor* PanelActor = Cast<AMumosaFloatingPanelActor>(CurrentPopupActor);
-	if (PanelActor)
+	ShowWorldAnalysisPopupText(ResponseText);
+	if (ShouldUseViewportAnalysisPopup())
 	{
-		PanelActor->SetBodyText(ResponseText);
-		PanelActor->SetPopupVisible(true);
+		ShowAnalysisPopupText(ResponseText);
 	}
 }

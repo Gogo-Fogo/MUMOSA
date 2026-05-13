@@ -1,8 +1,8 @@
 #include "UI/MumosaFloatingPanelActor.h"
+#include "UI/MumosaFloatingPanelWidget.h"
 #include "Components/SceneComponent.h"
+#include "Components/WidgetComponent.h"
 #include "Kismet/GameplayStatics.h"
-#include "UObject/ConstructorHelpers.h"
-#include "Core/ActorComponent/UIText.h"
 
 static FString WrapText(const FString& InText, int32 MaxCharsPerLine, int32 MaxLines)
 {
@@ -52,11 +52,19 @@ AMumosaFloatingPanelActor::AMumosaFloatingPanelActor()
 	USceneComponent* Root = CreateDefaultSubobject<USceneComponent>(TEXT("Root"));
 	SetRootComponent(Root);
 
-	static ConstructorHelpers::FClassFinder<AActor> LGUIBP(TEXT("/Game/MUMOSA/UI/BP_MumosaLGUIFloatingPanel.BP_MumosaLGUIFloatingPanel_C"));
-	if (LGUIBP.Succeeded())
-	{
-		LGUIPopupClass = LGUIBP.Class;
-	}
+	RoundedBackgroundComponent = CreateDefaultSubobject<UWidgetComponent>(TEXT("RoundedBackground"));
+	RoundedBackgroundComponent->SetupAttachment(Root);
+	RoundedBackgroundComponent->SetWidgetClass(UMumosaFloatingPanelWidget::StaticClass());
+	RoundedBackgroundComponent->SetWidgetSpace(EWidgetSpace::World);
+	RoundedBackgroundComponent->SetDrawSize(FVector2D(640.0f, 280.0f));
+	RoundedBackgroundComponent->SetBlendMode(EWidgetBlendMode::Transparent);
+	RoundedBackgroundComponent->SetTwoSided(true);
+	RoundedBackgroundComponent->SetTickWhenOffscreen(true);
+	RoundedBackgroundComponent->SetTranslucentSortPriority(100);
+	RoundedBackgroundComponent->SetPivot(FVector2D(0.5f, 0.5f));
+	RoundedBackgroundComponent->SetRelativeLocation(FVector(0.0f, 0.0f, 0.0f));
+	RoundedBackgroundComponent->SetRelativeScale3D(FVector(0.18f, 0.18f, 0.18f));
+	RoundedBackgroundComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 
 	PrimaryActorTick.bCanEverTick = true;
 }
@@ -65,16 +73,10 @@ void AMumosaFloatingPanelActor::BeginPlay()
 {
 	Super::BeginPlay();
 
-	if (LGUIPopupClass && GetWorld() && !LGUIPanelActor)
-	{
-		FActorSpawnParameters SpawnParams;
-		SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-		LGUIPanelActor = GetWorld()->SpawnActor<AActor>(LGUIPopupClass, FVector::ZeroVector, FRotator::ZeroRotator, SpawnParams);
-		if (LGUIPanelActor)
-		{
-			LGUIPanelActor->AttachToActor(this, FAttachmentTransformRules::KeepRelativeTransform);
-		}
-	}
+	SetActorScale3D(FVector(1.0f));
+	RoundedBackgroundComponent->InitWidget();
+	RoundedBackgroundComponent->SetVisibility(true, true);
+	RoundedBackgroundComponent->SetHiddenInGame(false, true);
 }
 
 void AMumosaFloatingPanelActor::Tick(float DeltaTime)
@@ -85,46 +87,45 @@ void AMumosaFloatingPanelActor::Tick(float DeltaTime)
 	if (PC && PC->PlayerCameraManager)
 	{
 		FVector CamLoc = PC->PlayerCameraManager->GetCameraLocation();
-		FVector FromCam = (GetActorLocation() - CamLoc);
-		FromCam.Z = 0.f;
-		if (!FromCam.IsNearlyZero())
+		FVector ToCam = (CamLoc - GetActorLocation());
+		if (!ToCam.IsNearlyZero())
 		{
-			SetActorRotation(FromCam.Rotation());
+			FRotator LookAt = ToCam.Rotation();
+			LookAt.Pitch = 0.0f;
+			LookAt.Roll = 0.0f;
+			SetActorRotation(LookAt);
 		}
 	}
 }
 
+void AMumosaFloatingPanelActor::SetAnchorData(const FVector& InAnchorLocation, const FVector& InSurfaceNormal)
+{
+	AnchorLocation = InAnchorLocation;
+	SurfaceNormal = InSurfaceNormal.IsNearlyZero() ? FVector::ForwardVector : InSurfaceNormal.GetSafeNormal();
+
+	const FVector UpOffset(0.0f, 0.0f, 32.0f);
+	const FVector SurfaceOffset = SurfaceNormal * 28.0f;
+	SetActorLocation(AnchorLocation + SurfaceOffset + UpOffset);
+}
+
 void AMumosaFloatingPanelActor::SetBodyText(const FString& Text)
 {
-	if (!LGUIPanelActor) return;
-
 	FString Wrapped = WrapText(Text, 40, 6);
+	RoundedBackgroundComponent->InitWidget();
 
-	TArray<UUIText*> TextComps;
-	LGUIPanelActor->GetComponents<UUIText>(TextComps);
-	for (UUIText* Comp : TextComps)
+	if (UMumosaFloatingPanelWidget* RoundedWidget = Cast<UMumosaFloatingPanelWidget>(RoundedBackgroundComponent->GetUserWidgetObject()))
 	{
-		if (Comp->GetName().Contains(TEXT("BodyText")))
-		{
-			Comp->SetText(FText::FromString(Wrapped));
-			return;
-		}
+		RoundedWidget->SetBodyText(Wrapped);
 	}
 }
 
 void AMumosaFloatingPanelActor::SetTitleText(const FString& Text)
 {
-	if (!LGUIPanelActor) return;
+	RoundedBackgroundComponent->InitWidget();
 
-	TArray<UUIText*> TextComps;
-	LGUIPanelActor->GetComponents<UUIText>(TextComps);
-	for (UUIText* Comp : TextComps)
+	if (UMumosaFloatingPanelWidget* RoundedWidget = Cast<UMumosaFloatingPanelWidget>(RoundedBackgroundComponent->GetUserWidgetObject()))
 	{
-		if (Comp->GetName().Contains(TEXT("TitleText")))
-		{
-			Comp->SetText(FText::FromString(Text));
-			return;
-		}
+		RoundedWidget->SetTitleText(Text);
 	}
 }
 
@@ -132,8 +133,6 @@ void AMumosaFloatingPanelActor::SetPopupVisible(bool bVisible)
 {
 	SetActorHiddenInGame(!bVisible);
 	SetActorTickEnabled(bVisible);
-	if (LGUIPanelActor)
-	{
-		LGUIPanelActor->SetActorHiddenInGame(!bVisible);
-	}
+	RoundedBackgroundComponent->SetVisibility(bVisible, true);
+	RoundedBackgroundComponent->SetHiddenInGame(!bVisible, true);
 }

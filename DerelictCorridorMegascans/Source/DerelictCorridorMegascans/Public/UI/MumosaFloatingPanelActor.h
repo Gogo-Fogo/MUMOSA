@@ -18,12 +18,12 @@ public:
 	void SetBodyText(const FString& Text);
 	void SetTitleText(const FString& Text);
 	void SetPopupVisible(bool bVisible);
+	void SetAnchorData(const FVector& InAnchorLocation, const FVector& InSurfaceNormal);
 
 protected:
-	UPROPERTY()
-	TSubclassOf<AActor> LGUIPopupClass;
+	UPROPERTY(VisibleAnywhere, Category = "MUMOSA|UI")
+	TObjectPtr<class UWidgetComponent> RoundedBackgroundComponent;
 
-public:
-	UPROPERTY()
-	TObjectPtr<AActor> LGUIPanelActor;
+	FVector AnchorLocation = FVector::ZeroVector;
+	FVector SurfaceNormal = FVector::ForwardVector;
 };
